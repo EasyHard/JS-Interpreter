@@ -270,7 +270,7 @@
   var _if = {keyword: "if"}, _return = {keyword: "return", beforeExpr: true}, _switch = {keyword: "switch"};
   var _throw = {keyword: "throw", beforeExpr: true}, _try = {keyword: "try"}, _var = {keyword: "var"};
   var _while = {keyword: "while", isLoop: true}, _with = {keyword: "with"}, _new = {keyword: "new", beforeExpr: true};
-  var _this = {keyword: "this"};
+  var _this = {keyword: "this"}, _memofunction = {keyword: "memofunction"};
 
   // The keywords that denote values.
 
@@ -289,6 +289,7 @@
                       "continue": _continue, "debugger": _debugger, "default": _default,
                       "do": _do, "else": _else, "finally": _finally, "for": _for,
                       "function": _function, "if": _if, "return": _return, "switch": _switch,
+                      "memofunction": _memofunction,
                       "throw": _throw, "try": _try, "var": _var, "while": _while, "with": _with,
                       "null": _null, "true": _true, "false": _false, "new": _new, "in": _in,
                       "instanceof": {keyword: "instanceof", binop: 7, beforeExpr: true}, "this": _this,
@@ -408,7 +409,7 @@
 
   // And the keywords.
 
-  var isKeyword = makePredicate("break case catch continue debugger default do else finally for function if return switch throw try var while with null true false instanceof typeof void delete new in this");
+  var isKeyword = makePredicate("break case catch continue debugger default do else finally for function if return switch throw try var while with null true false instanceof typeof void delete new in this memofunction");
 
   // ## Character categories
 
@@ -1204,6 +1205,8 @@
       if (eat(_in)) {checkLVal(init); return parseForIn(node, init);}
       return parseFor(node, init);
 
+    case _memofunction:
+      node.memo = true;
     case _function:
       next();
       return parseFunction(node, true);
@@ -1610,6 +1613,12 @@
 
     case _braceL:
       return parseObj();
+
+    case _memofunction:
+      var node = startNode();
+      node.memo = true;
+      next();
+      return parseFunction(node, false);
 
     case _function:
       var node = startNode();

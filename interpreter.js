@@ -1527,11 +1527,8 @@ Interpreter.prototype['getMemoValue'] = function(funcname, args) {
 }
 
 Interpreter.prototype['setMemoValue'] = function(funcname, args, value) {
-  if (typeof this.memo[funcname] === 'undefined') {
-    this.memo[funcname] = {};
-  }
-  var memo = this.memo[funcname];
-  memo[args] = value;
+  this.memo[funcname] = this.memo[funcname] || {};
+  this.memo[funcname][args] = value;
 }
 
 Interpreter.prototype['beforeFuncCall'] = function(state) {
@@ -1539,7 +1536,7 @@ Interpreter.prototype['beforeFuncCall'] = function(state) {
   var args = [];
   var funcname = node.callee.name;
   // is memo function?
-  if (funcname && funcname.search(/memo$/) !== -1) {
+  if (state.func_ && state.func_.node && state.func_.node.memo) {
     state.arguments.forEach(function (item) {
       args = args.concat(item.data);
     });
@@ -1558,7 +1555,8 @@ Interpreter.prototype['afterFuncCall'] = function(state) {
   var node = state.node;
   var args = [];
   var funcname = node.callee.name;
-  if (funcname && funcname.search(/memo$/) !== -1) {
+  // is memo function?
+  if (state.func_ && state.func_.node && state.func_.node.memo) {
     state.arguments.forEach(function (item) {
       args = args.concat(item.data);
     });

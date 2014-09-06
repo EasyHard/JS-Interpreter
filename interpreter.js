@@ -41,6 +41,8 @@ var Interpreter = function(code, opt_initFunc) {
   this.ast = acorn.parse(code);
   var scope = this.createScope(this.ast, null);
   this.stateStack = [{node: this.ast, scope: scope, thisExpression: scope}];
+  this.memostack = [];
+  this.memo = {};
 };
 
 /**
@@ -1516,6 +1518,57 @@ Interpreter.prototype['stepBlockStatement'] = function() {
   }
 };
 
+// returning undefined indicates the result has not been memoed.
+Interpreter.prototype['getMemoValue'] = function(funcname, args) {
+  var memo = this.memo[funcname];
+  if (memo) {
+    return memo[args];
+  }
+}
+
+Interpreter.prototype['setMemoValue'] = function(funcname, args, value) {
+  if (typeof this.memo[funcname] === 'undefined') {
+    this.memo[funcname] = {};
+  }
+  var memo = this.memo[funcname];
+  memo[args] = value;
+}
+
+Interpreter.prototype['beforeFuncCall'] = function(state) {
+  var node = state.node;
+  var args = [];
+  var funcname = node.callee.name;
+  // is memo function?
+  if (funcname && funcname.search(/memo$/) !== -1) {
+    state.arguments.forEach(function (item) {
+      args = args.concat(item.data);
+    });
+    // logging memo function
+    this.memostack = this.memostack.concat({
+      op: 'push',
+      func: funcname,
+      args: args
+    });
+    // recover result from memo if possible
+    return this.getMemoValue(funcname, args);
+  }
+};
+
+Interpreter.prototype['afterFuncCall'] = function(state) {
+  var node = state.node;
+  var args = [];
+  var funcname = node.callee.name;
+  if (funcname && funcname.search(/memo$/) !== -1) {
+    state.arguments.forEach(function (item) {
+      args = args.concat(item.data);
+    });
+    this.memostack = this.memostack.concat({
+      op: 'pop'
+    });
+    this.setMemoValue(funcname, args, state.value);
+  }
+}
+
 Interpreter.prototype['stepCallExpression'] = function() {
   var state = this.stateStack[0];
   var node = state.node;
@@ -1577,29 +1630,35 @@ Interpreter.prototype['stepCallExpression'] = function() {
         state.func_ = state.member_;
       }
       if (state.func_.node) {
-        var scope =
-            this.createScope(state.func_.node.body, state.func_.parentScope);
-        // Add all arguments.
-        for (var i = 0; i < state.func_.node.params.length; i++) {
-          var paramName = this.createPrimitive(state.func_.node.params[i].name);
-          var paramValue = state.arguments.length > i ? state.arguments[i] :
-              this.UNDEFINED;
-          this.setProperty(scope, paramName, paramValue);
+        var value = this.beforeFuncCall(state);
+        if (typeof value === 'undefined') {
+          var scope =
+                this.createScope(state.func_.node.body, state.func_.parentScope);
+          // Add all arguments.
+          for (var i = 0; i < state.func_.node.params.length; i++) {
+            var paramName = this.createPrimitive(state.func_.node.params[i].name);
+            var paramValue = state.arguments.length > i ? state.arguments[i] :
+                  this.UNDEFINED;
+            this.setProperty(scope, paramName, paramValue);
+          }
+          // Build arguments variable.
+          var argsList = this.createObject(this.ARRAY);
+          for (var i = 0; i < state.arguments.length; i++) {
+            this.setProperty(argsList, this.createPrimitive(i),
+                             state.arguments[i]);
+          }
+          this.setProperty(scope, 'arguments', argsList);
+          var funcState = {
+            node: state.func_.node.body,
+            scope: scope,
+            thisExpression: state.funcThis_
+          };
+          this.stateStack.unshift(funcState);
+          state.value = this.UNDEFINED;  // Default value if no explicit return.
+        } else {
+          // follow the memoed value
+          state.value = value;
         }
-        // Build arguments variable.
-        var argsList = this.createObject(this.ARRAY);
-        for (var i = 0; i < state.arguments.length; i++) {
-          this.setProperty(argsList, this.createPrimitive(i),
-                           state.arguments[i]);
-        }
-        this.setProperty(scope, 'arguments', argsList);
-        var funcState = {
-          node: state.func_.node.body,
-          scope: scope,
-          thisExpression: state.funcThis_
-        };
-        this.stateStack.unshift(funcState);
-        state.value = this.UNDEFINED;  // Default value if no explicit return.
       } else if (state.func_.nativeFunc) {
         state.value = state.func_.nativeFunc.apply(state.funcThis_,
                                                    state.arguments);
@@ -1628,6 +1687,7 @@ Interpreter.prototype['stepCallExpression'] = function() {
       this.stateStack.shift();
       this.stateStack[0].value = state.isConstructor_ ?
           state.funcThis_ : state.value;
+      this.afterFuncCall(state);
     }
   }
 };

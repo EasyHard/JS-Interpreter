@@ -23,7 +23,7 @@
  */
 'use strict';
 
-if (typeof require !== undefined) {
+if (typeof window === undefined) {
     var acorn = require('./acorn');
 }
 
